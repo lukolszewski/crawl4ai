@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import asyncio
 from typing import List, Tuple, Dict
 from functools import partial
@@ -59,6 +60,19 @@ def _get_memory_mb():
     except Exception as e:
         logger.warning(f"Could not get memory info: {e}")
         return None
+
+# --- Helper to safely serialize data with inf/NaN values ---
+def safe_serialize(data):
+    """Clean data of inf/NaN values before JSON serialization"""
+    def clean_value(v):
+        if isinstance(v, float) and (math.isinf(v) or math.isnan(v)):
+            return None
+        elif isinstance(v, dict):
+            return {k: clean_value(val) for k, val in v.items()}
+        elif isinstance(v, (list, tuple)):
+            return [clean_value(val) for val in v]
+        return v
+    return clean_value(data)
 
 
 async def handle_llm_qa(
@@ -572,15 +586,15 @@ async def handle_crawl_request(
             peak_mem_mb = max(peak_mem_mb if peak_mem_mb else 0, end_mem_mb) # <--- Get peak memory
         logger.info(f"Memory usage: Start: {start_mem_mb} MB, End: {end_mem_mb} MB, Delta: {mem_delta_mb} MB, Peak: {peak_mem_mb} MB")
 
-        # Process results to handle PDF bytes
+        # Process results to handle PDF bytes with safe serialization
         processed_results = []
         for result in results:
             try:
                 # Check if result has model_dump method (is a proper CrawlResult)
                 if hasattr(result, 'model_dump'):
-                    result_dict = result.model_dump()
+                    result_dict = safe_serialize(result.model_dump())
                 elif isinstance(result, dict):
-                    result_dict = result
+                    result_dict = safe_serialize(result)
                 else:
                     # Handle unexpected result type
                     logger.warning(f"Unexpected result type: {type(result)}")
@@ -589,15 +603,15 @@ async def handle_crawl_request(
                         "success": False,
                         "error_message": f"Unexpected result type: {type(result).__name__}"
                     }
-                
+
                 # if fit_html is not a string, set it to None to avoid serialization errors
                 if "fit_html" in result_dict and not (result_dict["fit_html"] is None or isinstance(result_dict["fit_html"], str)):
                     result_dict["fit_html"] = None
-                    
+
                 # If PDF exists, encode it to base64
                 if result_dict.get('pdf') is not None and isinstance(result_dict.get('pdf'), bytes):
                     result_dict['pdf'] = b64encode(result_dict['pdf']).decode('utf-8')
-                    
+
                 processed_results.append(result_dict)
             except Exception as e:
                 logger.error(f"Error processing result: {e}")
