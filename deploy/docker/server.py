@@ -237,6 +237,17 @@ async def get_markdown(
     body: MarkdownRequest,
     _td: Dict = Depends(token_dep),
 ):
+    """
+    Fetches a URL and returns its content as clean Markdown.
+    This is the primary tool for reading single web pages into context.
+
+    Filtering strategies: 'fit' (default, main content only), 'raw' (full page),
+    'bm25' (query-based, requires 'q' parameter), 'llm' (LLM extraction, requires 'q' parameter).
+
+    Parameters: 'q' for query text (bm25/llm), 'c' for cache control (1=enable).
+
+    Returns clean markdown text suitable for LLM processing.
+    """
     if not body.url.startswith(("http://", "https://")) and not body.url.startswith(("raw:", "raw://")):
         raise HTTPException(
             400, "Invalid URL format. Must start with http://, https://, or for raw HTML (raw:, raw://)")
